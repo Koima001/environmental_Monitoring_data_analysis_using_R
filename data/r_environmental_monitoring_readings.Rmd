@@ -1,0 +1,399 @@
+---
+title: "Environmental Monitoring Readings Analysis"
+author: "Purity Koima"
+date: "2026-11-02"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    toc_depth: 2
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6)
+library(tidyverse)
+library(lubridate)
+library(gt)
+library(reactable)
+library(flextable)
+library(htmltools)
+```
+# Introduction
+
+Environmental monitoring plays an important role in assessing environmental conditions and identifying potential variations in environmental quality across monitoring locations. This analysis uses an **AI-generated synthetic dataset** representing environmental monitoring readings from five hypothetical industrial monitoring sites: Athi River Industrial Zone, Changamwe Works Area, Eldoret Industrial Area, Mtwapa Industrial Zone and Nakuru Processing Estate. The dataset was developed for educational and portfolio demonstration purposes to illustrate data cleaning, descriptive statistical analysis and visualization techniques using R. The findings represent patterns within the synthetic data and do not reflect actual environmental conditions at these locations.
+
+```{r data_import}
+setwd("C:/Users/ADMIN/Documents/R/Environmental_monitoring_readings/Data")
+r_environmental_monitoring_readings <- read.csv("r_environmental_monitoring_readings_raw.csv")
+```
+
+## Data inspection.
+
+The dataset structure was examined to identify the data types and completeness of individual variables. The analysis distinguishes between numerical and categorical fields and assesses the distribution of missing values across columns. This provides an overview of the dataset's structure, highlights potential data quality issues, supports decisions on appropriate data cleaning and pre-processing procedures.
+
+```{r column name inspection}
+column_info <- tibble(
+  Column_Name = names(r_environmental_monitoring_readings),
+  Data_Type = sapply(r_environmental_monitoring_readings,
+                     function(x) class(x)[1]),
+  Missing_Values = sapply(r_environmental_monitoring_readings,
+                          function(x) sum(is.na(x)))
+) %>%
+  arrange(desc(Missing_Values))
+
+gt(column_info) %>%
+  tab_header(
+    title = "Dataset Column Information",
+    subtitle = "Data types and missing value distribution"
+  )
+```
+
+**Dataset preview.**
+
+The initial preview confirmed the dataset’s structure and highlighted the variables available for environmental monitoring analysis.
+
+```{r dataset preview, echo=FALSE}
+reactable(
+  head(r_environmental_monitoring_readings, 5),
+  searchable = FALSE,
+  filterable = FALSE,
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  pagination = FALSE,
+  resizable = TRUE,
+  defaultColDef = colDef(
+    minWidth = 150
+  ),
+  style = list(
+    width = "100%",
+    overflowX = "auto"
+  )
+)
+```
+
+**Pollutant-Specific Summary Statistics.**
+
+Summary statistics were calculated separately for each pollutant (CO, NO₂, PM10, PM2.5 and SO₂) to examine the distribution of recorded concentrations. The analysis includes measures of central tendency, variability and range alongside the number of missing readings for each pollutant.
+
+```{r summary statistics}
+pollutant_summary <- r_environmental_monitoring_readings %>%
+  group_by(pollutant, unit) %>%
+  summarise(
+    Count = sum(!is.na(reading_value)),
+    Missing = sum(is.na(reading_value)),
+    Mean = mean(reading_value, na.rm = TRUE),
+    Median = median(reading_value, na.rm = TRUE),
+    SD = sd(reading_value, na.rm = TRUE),
+    Minimum = min(reading_value, na.rm = TRUE),
+    Maximum = max(reading_value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+gt(pollutant_summary) %>%
+  tab_header(
+    title = "Pollutant-Specific Summary Statistics",
+    subtitle = "Descriptive statistics by pollutant and measurement unit"
+  ) %>%
+  fmt_number(
+    columns = c(Mean, Median, SD, Minimum, Maximum),
+    decimals = 2
+  ) %>%
+  opt_row_striping()
+```
+
+**Environmental Measurements Summary.**
+
+Descriptive statistics were calculated for temperature, rainfall and wind speed to examine their distributions and variations across the monitoring records. The analysis includes the mean, median, standard deviation, minimum and maximum values.
+
+```{r}
+environmental_summary <- r_environmental_monitoring_readings %>%
+  select(rainfall_mm, temperature_c, wind_speed_m_s) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  group_by(Variable) %>%
+  summarise(
+    Count = sum(!is.na(Value)),
+    Missing = sum(is.na(Value)),
+    Mean = mean(Value, na.rm = TRUE),
+    Median = median(Value, na.rm = TRUE),
+    SD = sd(Value, na.rm = TRUE),
+    Minimum = min(Value, na.rm = TRUE),
+    Maximum = max(Value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+gt(environmental_summary) %>%
+  tab_header(
+    title = "Environmental Measurements Summary",
+    subtitle = "Descriptive statistics for meteorological variables"
+  ) %>%
+  fmt_number(
+    columns = c(Mean, Median, SD, Minimum, Maximum),
+    decimals = 2
+  ) %>%
+  opt_row_striping()
+```
+
+```{r date_standardization}
+#Convert date from character to date
+r_environmental_monitoring_readings <- r_environmental_monitoring_readings %>%
+  mutate(reading_date = mdy(reading_date))
+```
+
+**Duplicate identification and removal**.
+
+ A duplicate records assessment was conducted to evaluate the presence of exact duplicate entries in the environmental monitoring dataset. The process involved identifying and removing duplicate records to improve data consistency and reliability. The assessment also verified the effectiveness of the cleaning process by checking for any remaining duplicates, ensuring the dataset was ready for subsequent analysis.
+ 
+```{r duplicate_assessment, echo=FALSE}
+# Record count before cleaning
+records_before <- nrow(r_environmental_monitoring_readings)
+
+# Identify exact duplicate records
+duplicates_found <- sum(duplicated(r_environmental_monitoring_readings))
+
+# Remove duplicates
+r_environmental_monitoring_readings <- unique(
+  r_environmental_monitoring_readings
+)
+
+# Record count after cleaning
+records_after <- nrow(r_environmental_monitoring_readings)
+
+# Create summary table
+duplicate_summary <- tibble(
+  Assessment = c(
+    "Records Before Cleaning",
+    "Duplicate Records Identified",
+    "Duplicate Records Removed",
+    "Records After Cleaning",
+    "Remaining Duplicates"
+  ),
+  Number_of_Records = c(
+    records_before,
+    duplicates_found,
+    duplicates_found,
+    records_after,
+    sum(duplicated(r_environmental_monitoring_readings))
+  )
+)
+
+# Display results
+gt(duplicate_summary) %>%
+  tab_header(
+    title = "Duplicate Records Assessment",
+    subtitle = "Identification and removal of exact duplicate records"
+  ) %>%
+  cols_label(
+    Assessment = "Assessment",
+    Number_of_Records = "Number of Records"
+  ) %>%
+  opt_row_striping() %>%
+  tab_options(
+    table.font.size = px(13),
+    heading.title.font.size = px(18),
+    table.width = pct(100)
+  )
+```
+ 
+**Categorical Value Inspection and Standardization.**
+
+Inconsistent capitalization in site names was identified and standardized, improving consistency in site-level comparisons.
+
+```{r categories_inspection}
+site_summary <- r_environmental_monitoring_readings %>%
+  count(site, sort = TRUE) %>%
+  mutate(Variable = "Site", .before = 1) %>%
+  rename(Category = site, Frequency = n)
+
+r_environmental_monitoring_readings$site <- tools::toTitleCase(
+  tolower(r_environmental_monitoring_readings$site)
+)
+
+station_summary <- r_environmental_monitoring_readings %>%
+  count(station_id, sort = TRUE) %>%
+  mutate(Variable = "Station ID", .before = 1) %>%
+  rename(Category = station_id, Frequency = n)
+
+pollutant_summary <- r_environmental_monitoring_readings %>%
+  count(pollutant, sort = TRUE) %>%
+  mutate(Variable = "Pollutant", .before = 1) %>%
+  rename(Category = pollutant, Frequency = n)
+
+unit_summary <- r_environmental_monitoring_readings %>%
+  count(unit, sort = TRUE) %>%
+  mutate(Variable = "Unit", .before = 1) %>%
+  rename(Category = unit, Frequency = n)
+
+inspection_summary <- r_environmental_monitoring_readings %>%
+  count(inspection_status, sort = TRUE) %>%
+  mutate(Variable = "Inspection Status", .before = 1) %>%
+  rename(Category = inspection_status, Frequency = n)
+
+bind_rows(
+  site_summary,
+  station_summary,
+  pollutant_summary,
+  unit_summary,
+  inspection_summary
+) %>%
+  gt(groupname_col = "Variable") %>%
+  tab_header(
+    title = "Categorical Variable Frequency Distribution",
+    subtitle = "Distribution of environmental monitoring categories"
+  ) %>%
+  cols_label(
+    Category = "Category",
+    Frequency = "Frequency"
+  ) %>%
+  opt_row_striping()
+```
+
+**Descriptive statistics.**
+
+Descriptive statistics were calculated to summarize environmental readings across monitoring sites and pollutant categories. The analysis provides an overview of the distribution and variability of recorded measurements, including the number of observations, mean, standard deviation, minimum and maximum values for each site-pollutant combination. An interactive table is provided to facilitate exploration and comparison of the results.
+
+```{r descriptive_stats}
+site_pollutant_stats <- r_environmental_monitoring_readings %>%
+  drop_na(reading_value) %>%
+  group_by(site, pollutant) %>%
+  summarise(
+    Count = n(),
+    Mean = mean(reading_value),
+    SD = sd(reading_value),
+    Min = min(reading_value),
+    Max = max(reading_value),
+    .groups = "drop"
+  )
+
+reactable(
+  site_pollutant_stats,
+  searchable = TRUE,
+  filterable = TRUE,
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  pagination = FALSE,
+  resizable = TRUE,
+  defaultColDef = colDef(minWidth = 130),
+  style = list(
+    height = "400px",
+    overflowY = "auto",
+    overflowX = "auto"
+  )
+)
+```
+
+
+**Data visualization.**
+
+Visualizations were used to explore environmental readings across monitoring sites and pollutants, helping identify patterns and differences in recorded values.
+
+```{r pollutant_per_site}
+r_environmental_monitoring_readings %>%
+  ggplot(aes(pollutant, site, fill = site)) +
+  geom_col(position = "dodge")+
+  theme_bw()+
+  labs(x = "Site", y = "Pollutant", title = "Pollutant Per Site")
+```
+
+```{r pm2.5_per_site_monthly_trend}
+r_environmental_monitoring_readings %>%
+  filter(pollutant == "PM2.5") %>%
+  mutate(month = floor_date(reading_date,"month")) %>%
+  group_by(month, site) %>%
+  summarise(mean_reading = mean(reading_value, na.rm= TRUE), .groups = "drop") %>%
+  ggplot(aes(x = month, y = mean_reading, colour = site, group = site))+
+  geom_line(linewidth = 0.8)+
+  geom_point(size = 2)+
+  labs(title = "monthly_PM_2.5_Readings_Per_Site") +
+  theme_minimal()
+```
+
+```{r so2_readings_per_site}
+r_environmental_monitoring_readings %>%
+  filter(pollutant == "SO2") %>%
+  drop_na(site) %>%
+  ggplot(aes(x= site, y = reading_value, fill = site))+
+  geom_boxplot()+
+  facet_wrap(~pollutant, scales = "free_y")+
+  labs( title = "Distribution of SO2_reading_by_site.", x = "Reading", y = "Site")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r inspection_status_per_site}
+r_environmental_monitoring_readings %>%
+  count(site, inspection_status, name = "records" ) %>%
+  ggplot(aes(x = site, y = records, fill = inspection_status))+
+  geom_col(position = "dodge" ) +
+  labs(title = "Inspection_Status_by_Monitoring_Site", x = "Site", y = "Number_of_Records",
+       fill = "Inspection_Status") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+```
+
+# Findings and recommendations.
+
+## 1. Dataset completeness and quality
+
+The initial dataset contained 1,505 records across 11 variables. Data inspection identified 18 missing values in the `reading_value` variable, while the remaining variables had no missing values.
+
+Five exact duplicate records were identified and removed, reducing the dataset from 1,505 to 1,500 records. Subsequent verification confirmed that no duplicate records remained.
+
+## 2. Environmental monitoring distribution
+
+The dataset covered five monitoring sites, with Changamwe Works Area recording the highest number of observations (316), followed by Mtwapa Industrial Zone (310) and Nakuru Processing Estate (298).
+
+The pollutant distribution showed that SO2 had the highest number of recorded observations (323), followed by PM10 (314), CO (304), NO2 (299) and PM2.5 (260).
+
+## 3. Descriptive statistics
+
+The numerical summary revealed differences in the distribution and variability of environmental measurements.
+
+* **Environmental reading values:** The mean was 25.61, with a standard deviation of 24.25 and a maximum of 184.41. The difference between the mean and maximum suggests substantial variation in recorded measurements.
+* **Temperature:** The mean temperature was 28.92°C, with a standard deviation of 4.50°C and a maximum of 44.40°C.
+* **Rainfall:** The mean rainfall was 4.79 mm, with a standard deviation of 4.48 mm and a maximum of 34.00 mm.
+* **Wind speed:** The average wind speed was 4.68 m/s, with a standard deviation of 2.71 m/s.
+
+The descriptive statistics indicate variability across environmental measurements, supporting the need for further investigation of differences between monitoring locations and pollutants.
+
+## 4. Data standardization
+
+Inconsistent capitalization was identified in site names and standardized to improve consistency in categorical analysis. Date values were also standardized to support chronological analysis.
+
+The inspection status distribution included 518 Valid records, 499 Needs Review record, and 473 Calibrated records. An additional 10 records had missing inspection status values indicating an area requiring further data quality attention.
+
+## 5. Data visualization
+
+Visualizations were used to explore differences in environmental readings across monitoring sites and pollutant categories. These visual summaries complemented the descriptive statistics and provided a basis for examining patterns and variations in environmental measurements.
+
+## Recommendations
+
+Based on the findings of the environmental monitoring analysis, the following recommendations are proposed:
+
+1. **Improve data completeness:** Investigate the 18 missing environmental reading values and establish procedures for recording complete measurements during monitoring activities.
+
+2. **Strengthen data quality control:** Continue conducting duplicate checks, date standardization, and categorical value validation before analysis to maintain consistency and reliability.
+
+3. **Review inspection status:** Investigate the 499 records marked as Needs Review and ensure that the 10 records with missing inspection status are appropriately assessed and updated where possible.
+
+4. **Investigate unusually high readings:** Examine environmental measurements with particularly high values, including the maximum recorded reading of 184.41, to determine whether they represent genuine environmental conditions, measurement errors or other data quality concerns.
+
+5. **Maintain monitoring equipment:** Ensure monitoring stations are regularly inspected, calibrated, and maintained to support the accuracy and reliability of environmental measurements.
+
+6. **Strengthen site-level monitoring:** Conduct further analysis comparing environmental readings across the five monitoring sites to identify locations and pollutants requiring closer attention.
+
+7. **Incorporate temporal analysis:** Use the standardized dates to examine environmental measurements over time, identify potential trends and assess changes in pollutant levels and environmental conditions.
+
+8. **Promote continuous monitoring and reporting:** Establish regular data quality assessments and reporting procedures to support environmental management, informed decision-making and timely identification of potential environmental concerns.
+
